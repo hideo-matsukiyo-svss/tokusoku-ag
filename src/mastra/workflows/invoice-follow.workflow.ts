@@ -7,8 +7,9 @@ import { z } from 'zod';
 
 import { fetchWorkers } from '../tools/worker-list.js';
 import { fetchSubmissions } from '../tools/submissions.js';
-import { reconcile } from '../../logic/reconcile.js';
+import { reconcile, targetMonthOf } from '../../logic/reconcile.js';
 import { decideSchedule } from '../../logic/schedule.js';
+import { buildMessage } from '../../logic/message.js';
 import type { Worker, Submission } from '../../logic/types.js';
 
 // ---- スキーマ（データの形）----
@@ -53,9 +54,19 @@ const scheduleSchema = z.object({
   note: z.string(),
 });
 
+const messageSchema = z.object({
+  channel: z.literal('email'),
+  to: z.string(),
+  toName: z.string(),
+  subject: z.string(),
+  body: z.string(),
+  stage: z.enum(['初回', 'リマインド', '経理指示反映']),
+});
+
 const finalSchema = z.object({
   schedule: scheduleSchema,
   follow: resultSchema,
+  drafts: z.array(messageSchema), // 今日 未提出者へ送る連絡の下書き
 });
 
 // ---- ステップ1: 稼働者リストと提出メールを取得 ----
@@ -95,14 +106,24 @@ const reconcileStep = createStep({
   },
 });
 
-// ---- ステップ3: 今日の督促ステージを決める（営業日ベース・ルールで確定）----
+// ---- ステップ3+4: 今日のステージを決め（営業日ベース）、未提出者への連絡文面を作る ----
 const planStep = createStep({
   id: 'plan',
   inputSchema: z.object({ today: z.string(), follow: resultSchema }),
   outputSchema: finalSchema,
   execute: async ({ inputData }) => {
     const schedule = decideSchedule(inputData.today);
-    return { schedule, follow: inputData.follow };
+    const month = targetMonthOf(inputData.today);
+
+    // 初回 or リマインドの日だけ、未提出者ぶんの下書きを作る
+    const drafts =
+      schedule.stage === '初回' || schedule.stage === 'リマインド'
+        ? inputData.follow.pending.map((f) =>
+            buildMessage(f.worker as Worker, month, schedule.stage as '初回' | 'リマインド'),
+          )
+        : [];
+
+    return { schedule, follow: inputData.follow, drafts };
   },
 });
 
