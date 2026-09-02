@@ -1,6 +1,6 @@
-// ★請求書フォローAG のワークフロー本体（Step1〜2版）。
-// 今は「取得 → 突合（未提出者の検知）」の2ステップ。
-// このあと Step3(営業日タイミング)・Step4(文面)・Step5(HITL)・Step6(書き戻し) を足していきます。
+// ★請求書フォローAG のワークフロー本体（Step2.5版）。
+// 「取得 → 突合（4分類：未提出/提出済み/対象外/要確認）」の2ステップ。
+// このあと Step3(営業日タイミング)・Step4(文面)・Step5-7(HITL/Slack/実データ) を足していきます。
 
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
@@ -26,18 +26,23 @@ const submissionSchema = z.object({
   workerName: z.string().optional(),
   receivedAt: z.string(),
   subject: z.string(),
+  hasPdf: z.boolean(),
+  targetMonth: z.string(),
 });
 
 const followSchema = z.object({
   worker: workerSchema,
-  status: z.enum(['未提出', '提出済み', '対象外']),
+  status: z.enum(['未提出', '提出済み', '対象外', '要確認']),
   matchedSubmission: submissionSchema.optional(),
+  candidates: z.array(submissionSchema).optional(),
+  reviewReasons: z.array(z.string()).optional(),
 });
 
 const resultSchema = z.object({
   pending: z.array(followSchema),
   submitted: z.array(followSchema),
   excluded: z.array(followSchema),
+  needsReview: z.array(followSchema),
 });
 
 // ---- ステップ1: 稼働者リストと提出メールを取得 ----
@@ -58,7 +63,7 @@ const fetchStep = createStep({
   },
 });
 
-// ---- ステップ2: 突合して未提出者を検知（ルールで確定）----
+// ---- ステップ2: 突合して4分類（ルールで確定）----
 const reconcileStep = createStep({
   id: 'reconcile',
   inputSchema: z.object({
@@ -71,6 +76,7 @@ const reconcileStep = createStep({
     return reconcile(
       inputData.workers as Worker[],
       inputData.submissions as Submission[],
+      inputData.today,
     );
   },
 });

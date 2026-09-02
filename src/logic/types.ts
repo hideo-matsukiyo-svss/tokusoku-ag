@@ -1,9 +1,10 @@
 // 請求書フォローAG で扱うデータの「型」定義。
-// ★ここが Step1 の肝：督促の対象は「取引先の未入金」ではなく
-//   「稼働したのに請求書をまだ出していない業務委託者（＝未提出者）」です。
+// ★督促の対象は「稼働したのに請求書をまだ出していない業務委託者（＝未提出者）」。
+//   提出判定は4条件（差出人一致・件名が請求書らしい・PDF添付あり・対象月一致）。
+//   曖昧なものは自動確定せず「要確認」にしてSlackで人へ振る。
 
-/** 提出状況 */
-export type FollowStatus = '未提出' | '提出済み' | '対象外';
+/** 提出状況（4分類） */
+export type FollowStatus = '未提出' | '提出済み' | '対象外' | '要確認';
 
 /** 稼働者リスト(Silver層)の1人＝業務委託者 */
 export type Worker = {
@@ -25,18 +26,23 @@ export type Submission = {
   workerName?: string;  // 差出人名（判明していれば）
   receivedAt: string;   // 受信日 "YYYY-MM-DD"
   subject: string;      // 件名
+  hasPdf: boolean;      // PDF添付があるか
+  targetMonth: string;  // 何月分の請求か "YYYY-MM"
 };
 
 /** 1人ぶんの突合結果 */
 export type WorkerFollow = {
   worker: Worker;
   status: FollowStatus;
-  matchedSubmission?: Submission; // 「提出済み」と判定した根拠
+  matchedSubmission?: Submission;      // 「提出済み」と判定した根拠
+  candidates?: Submission[];           // 要確認のとき、判断材料になったメール
+  reviewReasons?: string[];            // 要確認の理由（人が見る用）
 };
 
-/** 突合の全体結果 */
+/** 突合の全体結果（4分類） */
 export type ReconcileResult = {
-  pending: WorkerFollow[];   // 未提出（＝これから督促する対象）
-  submitted: WorkerFollow[]; // 提出済み
-  excluded: WorkerFollow[];  // 対象外
+  pending: WorkerFollow[];     // 未提出（＝これから督促する対象）
+  submitted: WorkerFollow[];   // 提出済み
+  excluded: WorkerFollow[];    // 対象外
+  needsReview: WorkerFollow[]; // 要確認（Slackで人へ振る）
 };
