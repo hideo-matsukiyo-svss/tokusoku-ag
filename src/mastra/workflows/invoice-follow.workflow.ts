@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { fetchWorkers } from '../tools/worker-list.js';
 import { fetchSubmissions } from '../tools/submissions.js';
 import { reconcile } from '../../logic/reconcile.js';
+import { decideSchedule } from '../../logic/schedule.js';
 import type { Worker, Submission } from '../../logic/types.js';
 
 // ---- スキーマ（データの形）----
@@ -45,6 +46,18 @@ const resultSchema = z.object({
   needsReview: z.array(followSchema),
 });
 
+const scheduleSchema = z.object({
+  businessDay: z.number(),
+  todayIsBusinessDay: z.boolean(),
+  stage: z.enum(['初回', 'リマインド', '締め', '対象外日']),
+  note: z.string(),
+});
+
+const finalSchema = z.object({
+  schedule: scheduleSchema,
+  follow: resultSchema,
+});
+
 // ---- ステップ1: 稼働者リストと提出メールを取得 ----
 const fetchStep = createStep({
   id: 'fetch',
@@ -71,13 +84,25 @@ const reconcileStep = createStep({
     workers: z.array(workerSchema),
     submissions: z.array(submissionSchema),
   }),
-  outputSchema: resultSchema,
+  outputSchema: z.object({ today: z.string(), follow: resultSchema }),
   execute: async ({ inputData }) => {
-    return reconcile(
+    const follow = reconcile(
       inputData.workers as Worker[],
       inputData.submissions as Submission[],
       inputData.today,
     );
+    return { today: inputData.today, follow };
+  },
+});
+
+// ---- ステップ3: 今日の督促ステージを決める（営業日ベース・ルールで確定）----
+const planStep = createStep({
+  id: 'plan',
+  inputSchema: z.object({ today: z.string(), follow: resultSchema }),
+  outputSchema: finalSchema,
+  execute: async ({ inputData }) => {
+    const schedule = decideSchedule(inputData.today);
+    return { schedule, follow: inputData.follow };
   },
 });
 
@@ -85,8 +110,9 @@ const reconcileStep = createStep({
 export const invoiceFollowWorkflow = createWorkflow({
   id: 'invoice-follow-workflow',
   inputSchema: z.object({ today: z.string() }),
-  outputSchema: resultSchema,
+  outputSchema: finalSchema,
 })
   .then(fetchStep)
   .then(reconcileStep)
+  .then(planStep)
   .commit();
