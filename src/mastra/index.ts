@@ -3,7 +3,8 @@
 
 import { Mastra } from '@mastra/core';
 import { invoiceFollowWorkflow } from './workflows/invoice-follow.workflow.js';
+import { reinstructWorkflow } from './workflows/reinstruct.workflow.js';
 
 export const mastra = new Mastra({
-  workflows: { invoiceFollowWorkflow },
+  workflows: { invoiceFollowWorkflow, reinstructWorkflow },
 });

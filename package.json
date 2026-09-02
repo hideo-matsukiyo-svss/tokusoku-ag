@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "mastra dev",
     "start": "tsx src/run.ts",
+    "reinstruct": "tsx src/reinstruct.ts",
     "build": "mastra build",
     "typecheck": "tsc --noEmit"
   },
