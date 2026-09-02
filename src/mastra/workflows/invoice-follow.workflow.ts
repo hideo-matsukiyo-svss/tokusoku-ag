@@ -10,6 +10,9 @@ import { fetchSubmissions } from '../tools/submissions.js';
 import { reconcile, targetMonthOf } from '../../logic/reconcile.js';
 import { decideSchedule } from '../../logic/schedule.js';
 import { buildMessage } from '../../logic/message.js';
+import { contactId, reviewId } from '../../logic/judgment.js';
+import { recordJudgment } from '../tools/judgment-log.js';
+import { updateWorkerStatus } from '../tools/status-update.js';
 import type { Worker, Submission } from '../../logic/types.js';
 
 // ---- スキーマ（データの形）----
@@ -63,10 +66,27 @@ const messageSchema = z.object({
   stage: z.enum(['初回', 'リマインド', '経理指示反映']),
 });
 
-const finalSchema = z.object({
+// Step3+4の途中結果（today を後段へ引き継ぐ）
+const planSchema = z.object({
+  today: z.string(),
   schedule: scheduleSchema,
   follow: resultSchema,
   drafts: z.array(messageSchema), // 今日 未提出者へ送る連絡の下書き
+});
+
+// Step6：状態の書き戻し結果
+const writebackSchema = z.object({
+  contacts: z.array(z.object({ name: z.string(), recorded: z.boolean() })),
+  reviews: z.array(z.object({ name: z.string(), recorded: z.boolean() })),
+  finalized: z.array(z.object({ name: z.string(), status: z.string() })),
+  statusNotes: z.array(z.string()),
+});
+
+const finalSchema = z.object({
+  schedule: scheduleSchema,
+  follow: resultSchema,
+  drafts: z.array(messageSchema),
+  writeback: writebackSchema,
 });
 
 // ---- ステップ1: 稼働者リストと提出メールを取得 ----
@@ -110,7 +130,7 @@ const reconcileStep = createStep({
 const planStep = createStep({
   id: 'plan',
   inputSchema: z.object({ today: z.string(), follow: resultSchema }),
-  outputSchema: finalSchema,
+  outputSchema: planSchema,
   execute: async ({ inputData }) => {
     const schedule = decideSchedule(inputData.today);
     const month = targetMonthOf(inputData.today);
@@ -123,7 +143,78 @@ const planStep = createStep({
           )
         : [];
 
-    return { schedule, follow: inputData.follow, drafts };
+    return { today: inputData.today, schedule, follow: inputData.follow, drafts };
+  },
+});
+
+// ---- ステップ6: 状態の書き戻し（Gold判断ログ＋Silver稼働者リスト、冪等＝二重督促防止）----
+const recordStep = createStep({
+  id: 'record',
+  inputSchema: planSchema,
+  outputSchema: finalSchema,
+  execute: async ({ inputData }) => {
+    const { today, schedule, follow } = inputData;
+    const month = targetMonthOf(today);
+
+    const contacts: { name: string; recorded: boolean }[] = [];
+    const reviews: { name: string; recorded: boolean }[] = [];
+    const finalized: { name: string; status: string }[] = [];
+    const statusNotes: string[] = [];
+
+    // 初回/リマインドの日：督促を送った未提出者を、判断ログに冪等記録＋Silver更新
+    if (schedule.stage === '初回' || schedule.stage === 'リマインド') {
+      for (const f of follow.pending) {
+        const w = f.worker;
+        const { recorded } = await recordJudgment({
+          id: contactId(today, w.id),           // 同じ日・同じ人は1回だけ＝二重督促防止
+          type: '督促連絡',
+          workerId: w.id,
+          workerName: w.name,
+          targetMonth: month,
+          instruction: `${schedule.stage}連絡`,
+          decidedBy: '請求書フォローAG',
+          decidedAt: new Date().toISOString(),
+        });
+        contacts.push({ name: w.name, recorded });
+        if (recorded) {
+          const { note } = await updateWorkerStatus(w.id, `督促済み(${schedule.stage})`, today);
+          statusNotes.push(note);
+        }
+      }
+    }
+
+    // 要確認：いつでも判断ログに冪等記録（Slack通知の元ネタ）
+    for (const f of follow.needsReview) {
+      const w = f.worker;
+      const { recorded } = await recordJudgment({
+        id: reviewId(today, w.id),
+        type: '要確認エスカレ',
+        workerId: w.id,
+        workerName: w.name,
+        targetMonth: month,
+        instruction: (f.reviewReasons ?? []).join(' / '),
+        decidedBy: '請求書フォローAG',
+        decidedAt: new Date().toISOString(),
+      });
+      reviews.push({ name: w.name, recorded });
+    }
+
+    // 締めの日：今月の最終ステータスを稼働者リストへ反映（モック）
+    if (schedule.stage === '締め') {
+      const all = [...follow.submitted, ...follow.pending, ...follow.needsReview, ...follow.excluded];
+      for (const f of all) {
+        finalized.push({ name: f.worker.name, status: f.status });
+        const { note } = await updateWorkerStatus(f.worker.id, `最終:${f.status}`, today);
+        statusNotes.push(note);
+      }
+    }
+
+    return {
+      schedule,
+      follow,
+      drafts: inputData.drafts,
+      writeback: { contacts, reviews, finalized, statusNotes },
+    };
   },
 });
 
@@ -136,4 +227,5 @@ export const invoiceFollowWorkflow = createWorkflow({
   .then(fetchStep)
   .then(reconcileStep)
   .then(planStep)
+  .then(recordStep)
   .commit();

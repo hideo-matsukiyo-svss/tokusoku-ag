@@ -21,3 +21,16 @@ export function reinstructId(today: string, workerId: string, instruction: strin
   for (const ch of instruction.trim()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return `${today}_${workerId}_reinstruct_${h.toString(36)}`;
 }
+
+/**
+ * 「督促連絡」の冪等キー。同じ日・同じ人なら同じID。
+ * ★これが「二重督促防止」の要：同じ日にフローを2回動かしても、督促は1回しか記録しない。
+ */
+export function contactId(today: string, workerId: string): string {
+  return `${today}_${workerId}_contact`;
+}
+
+/** 「要確認エスカレ」の冪等キー。同じ日・同じ人なら同じID。 */
+export function reviewId(today: string, workerId: string): string {
+  return `${today}_${workerId}_review`;
+}

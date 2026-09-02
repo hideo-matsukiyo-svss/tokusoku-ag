@@ -28,7 +28,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { schedule, follow, drafts } = res.result;
+  const { schedule, follow, drafts, writeback } = res.result;
   const { pending, submitted, excluded, needsReview } = follow;
 
   console.log(`\n=== 請求書フォローAG（基準日: ${TODAY} / 対象月: ${month}分）===`);
@@ -79,7 +79,32 @@ async function main() {
     console.log(`      → Slack ${REVIEW_NOTIFY.slackChannelLabel} で ${who} に確認依頼（予定）`);
   }
 
-  console.log('\n※これは下書きです。実際の送信（メール/Slack）は Step7 で実データにつなぎます。\n');
+  // 状態の書き戻し（Gold判断ログ＋Silver稼働者リスト）
+  console.log('\n────────── 🗂 記録（Gold判断ログ＋Silver書き戻し）──────────');
+  if (writeback.contacts.length > 0) {
+    for (const c of writeback.contacts) {
+      console.log(`  督促 ${c.name}: ${c.recorded ? '✅ 記録' : '↩️ 本日分は記録済み（二重督促しない）'}`);
+    }
+  }
+  if (writeback.reviews.length > 0) {
+    for (const r of writeback.reviews) {
+      console.log(`  要確認 ${r.name}: ${r.recorded ? '✅ 記録' : '↩️ 本日分は記録済み'}`);
+    }
+  }
+  if (writeback.finalized.length > 0) {
+    console.log('  【締め】最終ステータスを稼働者リストへ反映:');
+    for (const f of writeback.finalized) console.log(`    ・${f.name} → ${f.status}`);
+  }
+  if (
+    writeback.contacts.length === 0 &&
+    writeback.reviews.length === 0 &&
+    writeback.finalized.length === 0
+  ) {
+    console.log('  （記録対象なし）');
+  }
+
+  console.log('\n※これは下書きです。実際の送信（メール/Slack）とNotion記録は Step7 でつなぎます。');
+  console.log('※同じ日にもう一度 npm start すると、督促は「記録済み」になります（＝二重督促防止）。\n');
 }
 
 main().catch((e) => {
