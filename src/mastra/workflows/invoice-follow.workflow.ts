@@ -177,7 +177,7 @@ const recordStep = createStep({
         });
         contacts.push({ name: w.name, recorded });
         if (recorded) {
-          const { note } = await updateWorkerStatus(w.id, `督促済み(${schedule.stage})`, today);
+          const { note } = await updateWorkerStatus(w.id, { lastContactedAt: today });
           statusNotes.push(note);
         }
       }
@@ -204,7 +204,7 @@ const recordStep = createStep({
       const all = [...follow.submitted, ...follow.pending, ...follow.needsReview, ...follow.excluded];
       for (const f of all) {
         finalized.push({ name: f.worker.name, status: f.status });
-        const { note } = await updateWorkerStatus(f.worker.id, `最終:${f.status}`, today);
+        const { note } = await updateWorkerStatus(f.worker.id, { submissionStatus: f.status });
         statusNotes.push(note);
       }
     }

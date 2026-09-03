@@ -6,13 +6,14 @@
   "description": "SVSS 経理AG パイロット: 請求書の督促エージェント（Mastra スターター）",
   "scripts": {
     "dev": "mastra dev",
-    "start": "tsx src/run.ts",
-    "reinstruct": "tsx src/reinstruct.ts",
+    "start": "tsx --env-file-if-exists=.env src/run.ts",
+    "reinstruct": "tsx --env-file-if-exists=.env src/reinstruct.ts",
     "build": "mastra build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@mastra/core": "^1.63.0",
+    "@notionhq/client": "^2.2.15",
     "zod": "^3.25.0"
   },
   "devDependencies": {

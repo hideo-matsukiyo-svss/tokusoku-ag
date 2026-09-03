@@ -72,12 +72,8 @@ const step = createStep({
     // ② 指示を反映した連絡文面を作る
     const message = buildMessage(worker, month, '経理指示反映', { instruction });
 
-    // ③ 稼働者リストのステータスを更新
-    const { note } = await updateWorkerStatus(
-      worker.id,
-      '経理指示で再連絡',
-      `指示者: ${by}`,
-    );
+    // ③ 稼働者リストのステータスを更新（最終連絡日を今日に）
+    const { note } = await updateWorkerStatus(worker.id, { lastContactedAt: today });
 
     return { recorded, logId: id, statusNote: note, message };
   },
