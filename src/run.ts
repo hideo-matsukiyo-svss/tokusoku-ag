@@ -7,7 +7,8 @@ import { targetMonthOf } from './logic/reconcile.js';
 import { buildMessage } from './logic/message.js';
 import { REVIEW_NOTIFY } from './config/notify.js';
 
-const TODAY = process.env.RUN_DATE ?? '2026-09-02';
+const TODAY = process.env.RUN_DATE
+  ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date());
 
 function printMessage(m: any, indent = '  ') {
   console.log(`${indent}件名: ${m.subject}`);

@@ -10,7 +10,8 @@
 import { reinstructWorkflow } from './mastra/workflows/reinstruct.workflow.js';
 import { listJudgments } from './mastra/tools/judgment-log.js';
 
-const TODAY = process.env.RUN_DATE ?? '2026-09-02';
+const TODAY = process.env.RUN_DATE
+  ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo' }).format(new Date());
 const TARGET = process.env.TARGET ?? 'w003'; // 既定: 鈴木一郎
 const INSTRUCTION =
   process.env.INSTRUCTION ??
